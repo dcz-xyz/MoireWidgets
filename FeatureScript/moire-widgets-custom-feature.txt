@@ -1,0 +1,577 @@
+FeatureScript 2144;
+import(path : "onshape/std/geometry.fs", version : "2144.0");
+
+
+export const DIAL_DIAMETER_BOUNDS = 
+{
+    (meter)      : [1e-5, 0.0025, 500],
+    (centimeter) : 0.25,
+    (millimeter) : 2.5,
+    (inch)       : 0.1,
+    (foot)       : 0.01,
+    (yard)       : 0.0025
+} as LengthBoundSpec; 
+
+
+export enum widgetType{
+    annotation {"Name" : "Dial"}
+    DIAL,
+    annotation {"Name" : "Slider"}
+    SLIDER,
+    annotation {"Name" : "Button"}
+    BUTTON,
+    annotation {"Name" : "Joystick"}
+    JOYSTICK, 
+    annotation {"Name" : "Switch"}
+    SWITCH
+}
+
+annotation { "Feature Type Name" : "Moire Widgets"}
+export const moireWidgets = defineFeature(function(context is Context, id is Id, definition is map)
+    precondition
+    {
+        // Ensure a part exists in the design
+        annotation{"Name" : "Face to Edit", "Filter" : EntityType.FACE, "MaxNumberOfPicks": 1}  
+        definition.faceToEdit is Query; 
+        
+        if (definition.widgetType != undefined)
+        {
+            annotation { "Name" : "Widget Type", "UIHint" : [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE]}
+            definition.widgetType is widgetType;
+        }
+        
+        if (definition.widgetType == widgetType.DIAL)
+        {
+            annotation {"Name" : "Center Point", "Filter" : EntityType.VERTEX && SketchObject.YES, "MaxNumberOfPicks" : 1}
+            definition.dialCenterPoint is Query; 
+            //  evVertexPoint(context, {'vertex' : pointQ}) to get its xyz location.
+            
+            annotation {"Name" : "dialOuterDiameter", "UIHint" : [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE],
+                        "Description" : "Set the outer diameter for the dial."}
+            isLength(definition.outerDiameter, NONNEGATIVE_LENGTH_BOUNDS);
+            
+            annotation {"Name" : "dialInnerDiameter", "UIHint" : [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE],
+                        "Description" : "Set the inner diameter for the dial."}
+            isLength(definition.innerDiameter, NONNEGATIVE_LENGTH_BOUNDS);
+            
+            // annotation{"Name": "dialHeight",
+            //         "UIHint": [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE], 
+            //         "Description" : "Set the Height of the dial."}
+            // isLength(definition.dialHeight, NONNEGATIVE_LENGTH_BOUNDS);    
+        }
+        
+        if (definition.widgetType == widgetType.SLIDER)
+        {
+            annotation {"Name" : "Slider Edge ", "Filter" : EntityType.EDGE, "MaxNumberOfPicks" : 1}
+            definition.sliderEdge is Query; 
+            
+            annotation {"Name" : "sliderOpaque Window Length", "UIHint" : [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE],
+                        "Description" : "Set the Length of the slider."}
+            isLength(definition.sliderOpaqueLength, NONNEGATIVE_LENGTH_BOUNDS);
+            
+            annotation{"Name": "Window Height",
+                    "UIHint": [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE], 
+                    "Description" : "Set Window Height of the Slider."}
+            isLength(definition.sliderHeight, NONNEGATIVE_LENGTH_BOUNDS);  
+            
+            annotation {"Name" : "slider Transparent Window Length", "UIHint" : [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE],
+                        "Description" : "Set the Length of the slider."}
+            isLength(definition.sliderTransparentLength, NONNEGATIVE_LENGTH_BOUNDS);
+            
+        }
+        
+    }
+    
+    {
+        switch (definition.widgetType)
+                {
+                        widgetType.DIAL : function()
+                            {
+                                makeDial(context, id, definition); 
+                            },
+                        widgetType.SLIDER : function()
+                            {
+                                makeSlider(context, id, definition); 
+
+                            },
+                        widgetType.BUTTON : function()
+                            {
+                                println("BUTTON");
+                            },
+                        widgetType.JOYSTICK : function()
+                            {
+                                println("JOYSTICK");
+                            },
+                        widgetType.SWITCH : function()
+                            {
+                                println("SWITCH");
+                            }
+                    }(); // <---- The parens make it execute once the switch is evaluated
+    }
+);
+    
+
+function makeSlider(context is Context, id is Id, definition is map) 
+{
+    var windowOpaqueLength = definition.sliderOpaqueLength; 
+    var windowTransparentLength = definition.sliderTransparentLength; 
+    var windowHeight = definition.sliderHeight; 
+    var clipLength = windowTransparentLength + (6 * millimeter); 
+    var clipHeight = windowHeight + (15 * millimeter) ; 
+    
+    var baseLength = windowOpaqueLength + (10 * millimeter); 
+    var baseWidth = windowHeight * 2 + (5 * millimeter); 
+    var baseThickness = 2 * millimeter; 
+    
+    var sliderSketch1 = newSketch(context, id + "sliderSketch1", {
+            // "sketchPlane" : qCreatedBy(makeId("Top"), EntityType.FACE)
+            "sketchPlane" : definition.faceToEdit
+    });
+    
+    skRectangle(sliderSketch1, "rectangle1", {
+            "firstCorner" : vector(-baseLength/2, -baseWidth/2) ,
+            "secondCorner" : vector(baseLength/2, baseWidth/2)
+    });
+    
+    skSolve(sliderSketch1);
+    
+    opExtrude(context, id + "sliderExtrude1", {
+            "entities" : qSketchRegion(id + "sliderSketch1"),
+            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sliderSketch1")}).normal,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : baseThickness
+    });
+    
+    opBoolean(context, id + "sliderBoolean1", {
+            "tools" : qBodyType(qEverything(EntityType.BODY), BodyType.SOLID),
+            "operationType" : BooleanOperationType.UNION
+    });
+    
+    //Begin sketches for slider clip
+    
+    var clipSketch1 = newSketch(context, id + "clipSketch1", {
+            "sketchPlane" :qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
+    });
+    
+    skRectangle(clipSketch1, "clipRectangle1", {
+            "firstCorner" : vector(-clipLength/2,  baseWidth/2),
+            "secondCorner" : vector(clipLength/2, -baseWidth/2 + 3 * millimeter)
+    });
+    
+    skSolve(clipSketch1);
+    
+    opExtrude(context, id + "clipExtrude1", {
+            "entities" : qSketchRegion(id + "clipSketch1"),
+            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sliderSketch1")}).normal,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : 1 * millimeter
+    });
+    
+    var clipSketch2 = newSketch(context, id + "clipSketch2", {
+            "sketchPlane" : qCapEntity(id + "clipExtrude1", CapType.END, EntityType.FACE)
+    });
+    
+    skRectangle(clipSketch2, "clipRectangle2", {
+            "firstCorner" : vector(-clipLength/2 + (2 * millimeter), windowHeight) ,
+            "secondCorner" : vector(clipLength/2 - (2 * millimeter), 0 * millimeter) 
+    });
+    
+    skSolve(clipSketch2);
+    //make window insert
+    
+    extrude(context, id + "clipExtrude2", {
+            "entities" : qSketchRegion(id + "clipSketch2"),
+            "endBound" : BoundingType.BLIND,
+            "depth" : 1 * millimeter,
+            "oppositeDirection" : true,
+            "operationType" : NewBodyOperationType.REMOVE,
+            "defaultScope" : false, 
+            "booleanScope" : qCreatedBy(id + "clipExtrude1", EntityType.BODY)
+            
+    });
+    
+    var sliderSketch2 = newSketch(context, id + "sliderSketch2", {
+            "sketchPlane" :qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
+    });
+    
+    skRectangle(sliderSketch2, "rectangle2", {
+            "firstCorner" : vector(-windowOpaqueLength/2, windowHeight),
+            "secondCorner" : vector(windowOpaqueLength/2, 0 * millimeter) 
+    });
+    
+    skSolve(sliderSketch2);
+    
+    extrude(context, id + "sliderExtrude2", {
+            "entities" : qSketchRegion(id + "sliderSketch2"),
+            "endBound" : BoundingType.BLIND,
+            "depth" : 0.5 * millimeter,
+            "oppositeDirection" : true,
+            "operationType" : NewBodyOperationType.REMOVE,
+            "defaultScope" : true, 
+            
+    });
+    
+    var clipSketch3 = newSketch(context, id + "clipSketch3", {
+            "sketchPlane" : qCapEntity(id + "clipExtrude1", CapType.END, EntityType.FACE)
+    });
+    
+    skRectangle(clipSketch3, "clipRectangle3", {
+            "firstCorner" : vector(-clipLength/2,  -2 * millimeter),
+            "secondCorner" : vector(clipLength/2, -baseWidth/2 + (3 * millimeter))
+    });
+    
+    skSolve(clipSketch3);
+    
+    opExtrude(context, id + "clipExtrude3", {
+            "entities" : qSketchRegion(id + "clipSketch3"),
+            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "clipSketch3")}).normal,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : 3 * millimeter
+    });
+    
+    var clipSketch4 = newSketch(context, id + "clipSketch4", {
+            "sketchPlane" : qCapEntity(id + "clipExtrude3", CapType.END, EntityType.FACE)
+    });
+    
+    skRectangle(clipSketch4, "clipRectangle4", {
+            "firstCorner" : vector(-clipLength/2,  -8 * millimeter),
+            "secondCorner" : vector(clipLength/2, -baseWidth/2 + (6 * millimeter))
+    });
+    
+    skSolve(clipSketch4); 
+    
+    opExtrude(context, id + "clipExtrude4", {
+            "entities" : qSketchRegion(id + "clipSketch4"),
+            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "clipSketch4")}).normal,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : 8 * millimeter
+    });
+    
+       // Query the body created by "extrude1"
+    var clipBodyQueryExtrude2 = qCreatedBy(id + "clipExtrude1", EntityType.BODY);
+
+    // Query the body created by "extrude3"
+    var  clipBodyQueryExtrude3 = qCreatedBy(id + "clipExtrude3", EntityType.BODY);
+    
+    // Query the body created by "extrude4"
+    var clipBodyQueryExtrude4 = qCreatedBy(id + "clipExtrude4", EntityType.BODY);
+
+
+    // Combine the queries for both bodies
+    var toolsQuerySliderClip = qUnion([clipBodyQueryExtrude2, clipBodyQueryExtrude3, clipBodyQueryExtrude4]);
+    
+    // // Perform the Boolean union operation for the clip
+    opBoolean(context, id + "sliderClipBooleanUnion", {
+        "tools" : toolsQuerySliderClip,
+        "operationType" : BooleanOperationType.UNION
+    });
+    
+    var sliderSketch3 = newSketch(context, id + "sliderSketch3", {
+            "sketchPlane" :  qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
+    });
+    
+    skRectangle(sliderSketch3, "rectangle3", {
+            "firstCorner" : vector(-baseLength/2, -baseWidth/2) ,
+            "secondCorner" : vector(baseLength/2, 0 * millimeter)
+    });
+    
+    skSolve(sliderSketch3);
+    
+    opExtrude(context, id + "sliderExtrude3", {
+            "entities" : qSketchRegion(id + "sliderSketch3"),
+            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sliderSketch3")}).normal,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : 9 * millimeter
+    });
+    
+    var sliderSketch4 = newSketch(context, id + "sliderSketch4", {
+            "sketchPlane" :  qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
+    });
+    
+    skRectangle(sliderSketch4, "removeRectangle1", {
+            "firstCorner" : vector(-baseLength/2 + 3 * millimeter, 0 * millimeter) ,
+            "secondCorner" : vector(baseLength/2 - 3 * millimeter, -baseWidth/2 + (3 * millimeter))
+    });
+    
+    skSolve(sliderSketch4);
+    
+    extrude(context, id + "sliderExtrude4", {
+            "entities" : qSketchRegion(id + "sliderSketch4"),
+            "endBound" : BoundingType.BLIND,
+            "depth" : 1.2 * millimeter,
+            "oppositeDirection" : false,
+            "operationType" : NewBodyOperationType.REMOVE,
+            "defaultScope" : false,
+            "booleanScope" : qCreatedBy(id + "sliderExtrude3", EntityType.BODY)     
+    });
+    
+    var sliderSketch5 = newSketch(context, id + "sliderSketch5", {
+            "sketchPlane" : qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
+    });
+    
+    skRectangle(sliderSketch5, "removeRectangle2", {
+            "firstCorner" : vector(-baseLength/2 + 3 * millimeter, -2 * millimeter),
+            "secondCorner" : vector(baseLength/2 - 3 * millimeter, -baseWidth/2 + (3 * millimeter))
+    });
+    
+    skSolve(sliderSketch5);
+    
+    extrude(context, id + "sliderExtrude5", {
+            "entities" : qSketchRegion(id + "sliderSketch5"),
+            "endBound" : BoundingType.BLIND,
+            "depth" : 4 * millimeter,
+            "oppositeDirection" : false,
+            "operationType" : NewBodyOperationType.REMOVE,
+            "defaultScope" : false,
+            "booleanScope" : qCreatedBy(id + "sliderExtrude3", EntityType.BODY)     
+    });
+    
+    var sliderSketch6 = newSketch(context, id + "sliderSketch6", {
+            "sketchPlane" :  qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
+    });
+    
+    skRectangle(sliderSketch6, "removeRectangle3", {
+            "firstCorner" : vector(-baseLength/2 + 3 * millimeter, -8 * millimeter),
+            "secondCorner" : vector(baseLength/2 - 3 * millimeter, -baseWidth/2 + (6 * millimeter))
+    });
+    
+    skSolve(sliderSketch6);
+
+    extrude(context, id + "sliderExtrude6", {
+            "entities" : qSketchRegion(id + "sliderSketch6"),
+            "endBound" : BoundingType.BLIND,
+            "depth" : 12 * millimeter,
+            "oppositeDirection" : false,
+            "operationType" : NewBodyOperationType.REMOVE,
+            "defaultScope" : false,
+            "booleanScope" : qCreatedBy(id + "sliderExtrude3", EntityType.BODY)     
+    });
+    
+    
+}
+
+   
+function makeDial(context is Context, id is Id, definition is map)
+{
+    
+    // Setup  Relevant Dimensions, Directions, Geometry Points
+    var dialCenter = evVertexPoint(context, { "vertex" : definition.dialCenterPoint });
+    var dialCoords is map = {"X" : dialCenter[0], "Y" : dialCenter[1], "Z" : dialCenter[2]};
+    println(dialCoords);
+    var normal = evOwnerSketchPlane(context, {
+            "entity" : definition.dialCenterPoint
+    }).normal;
+    
+    var outerDiameter = definition.outerDiameter;
+    var innerDiameter = definition.innerDiameter; 
+    var height = definition.height;
+    var baseOffset = 20 * millimeter; 
+    var baseHeight = 3 * millimeter; 
+    var baseInnerHeight = 3 * millimeter;
+    var couplerThickness = 3 * millimeter; 
+    var tolerance = 0.5 * millimeter;  
+    var offsetDistance = 5 * millimeter;
+    
+    //MAKE INITIAL SKETCH FOR EXTRUSIONS
+    var initPlane = plane(dialCenter, normal); 
+    
+    var dialSketch1  = newSketchOnPlane(context, id + "dialSketch1", {
+            "sketchPlane" : initPlane
+    });
+    // Create sketch entities here
+    skCircle(dialSketch1, "circle1", {
+            "center" : vector(0, 0) * millimeter,
+            "radius" : (outerDiameter) / 2 
+    });
+    
+    skSolve(dialSketch1);
+    
+    // Extrude Base 
+    opExtrude(context, id + "dialExtrude1", {
+            "entities" : qSketchRegion(id + "dialSketch1"),
+            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "dialSketch1")}).normal,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : baseHeight
+    });
+    
+    // Boolean Base to existing Part
+    opBoolean(context, id + "dialBoolean1", {
+            "tools" : qBodyType(qEverything(EntityType.BODY), BodyType.SOLID),
+            "operationType" : BooleanOperationType.UNION
+    });
+    
+    opDeleteBodies(context, id + "deleteBodies1", {
+            "entities" : qCreatedBy(id + "dialSketch1", EntityType.BODY)
+    });
+    
+    var dialSketch2 = newSketchOnPlane(context, id + "dialSketch2", {
+            "sketchPlane" : initPlane
+    });
+    
+    skCircle(dialSketch2, "circle1", {
+            "center" : vector(0, 0) * inch,
+            "radius" : innerDiameter / 2
+    });
+
+    skSolve(dialSketch2);
+    
+    opExtrude(context, id + "dialExtrude2", {
+        "entities" : qSketchRegion(id + "dialSketch2"),
+        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "dialSketch2")}).normal,
+        "endBound" : BoundingType.BLIND,
+        "endDepth" : baseInnerHeight * 2
+    });
+    
+    opBoolean(context, id + "boolean2", {
+            "tools" : qBodyType(qEverything(EntityType.BODY), BodyType.SOLID),
+            "operationType" : BooleanOperationType.UNION
+    });
+    
+    // Coupler Piece 
+    var sketch3 = newSketch(context, id + "sketch3", {
+            "sketchPlane" : qCapEntity(id + "extrude1", CapType.END, EntityType.FACE)
+            // "sketchPlane" : qTopPlane(EntityType.FACE)
+    });
+    
+  skCircle(sketch3, "circle3", {
+            "center" : vector(0, 0) * millimeter,
+            "radius" : innerDiameter / 2 + tolerance 
+    });
+    
+  skCircle(sketch3, "circle4", {
+            "center" : vector(0, 0) * millimeter,
+            "radius" : (innerDiameter + couplerThickness) / 2
+    });  
+    
+    skSolve(sketch3);
+    
+    opExtrude(context, id + "extrude3", {
+        "entities" : qSketchRegion(id + "sketch3", true),
+        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sketch3")}).normal,
+        "endBound" : BoundingType.BLIND,
+        "endDepth" : baseInnerHeight,
+        
+    });
+    
+    var sketch4 = newSketch(context, id + "sketch4", {
+            "sketchPlane" : qCapEntity(id + "extrude1", CapType.END, EntityType.FACE)
+            // "sketchPlane" : qTopPlane(EntityType.FACE)
+    });
+    
+  skCircle(sketch4, "circle5", {
+            "center" : vector(0, 0) * millimeter,
+            "radius" : innerDiameter / 2 + 7 * millimeter
+    });
+    
+  skCircle(sketch4, "circle6", {
+            "center" : vector(0, 0) * millimeter,
+            "radius" : innerDiameter / 2 + tolerance 
+    });
+    
+    skSolve(sketch4); 
+    
+    var extrude4 = opExtrude(context, id + "extrude4", {
+        "entities" : qSketchRegion(id + "sketch4", true),
+        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sketch4")}).normal,
+        "endBound" : BoundingType.BLIND,
+        "endDepth" : 0.5 * millimeter,
+    });
+    
+    //Set geometry for the handle part of it. 
+    var sketch5 = newSketch(context, id + "sketch5", {
+            "sketchPlane" : qCapEntity(id + "extrude4", CapType.END, EntityType.FACE)
+            // "sketchPlane" : qTopPlane(EntityType.FACE)
+    });
+    
+    skCircle(sketch5, "circle6", {
+            "center" : vector(0, 0) * millimeter,
+            "radius" : (innerDiameter + couplerThickness) / 2 
+    });
+    
+    skCircle(sketch5, "circle7", {
+            "center" : vector(0, 0) * millimeter,
+            "radius" : innerDiameter / 2 + 3 * millimeter
+    });
+    
+    skSolve(sketch5); 
+
+    var extrude5 = opExtrude(context, id + "extrude5", {
+        "entities" : qSketchRegion(id + "sketch5", true),
+        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sketch5")}).normal,
+        "endBound" : BoundingType.BLIND,
+        "endDepth" : baseInnerHeight
+    });
+    
+    var sketch6 = newSketch(context, id + "sketch6", {
+            "sketchPlane" : qCapEntity(id + "extrude5", CapType.END, EntityType.FACE)
+            // "sketchPlane" : qTopPlane(EntityType.FACE)
+    });
+    
+    skCircle(sketch6, "circle8", {
+            "center" : vector(0, 0) * millimeter,
+            "radius" : innerDiameter / 2 + 3 * millimeter
+    });
+    
+    skSolve(sketch6);
+
+  var extrude6 = opExtrude(context, id + "extrude6", {
+        "entities" : qSketchRegion(id + "sketch6"),
+        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sketch5")}).normal,
+        "endBound" : BoundingType.BLIND,
+        "endDepth" : 15 * millimeter
+    });
+    
+    var sketch7 = newSketch(context, id + "sketch7", {
+            "sketchPlane" : qCapEntity(id + "extrude6", CapType.END, EntityType.FACE)
+            // "sketchPlane" : qTopPlane(EntityType.FACE)
+    });
+    
+    skCircle(sketch7, "circle9", {
+            "center" : vector(0, 0) * millimeter,
+            "radius" : (innerDiameter + couplerThickness) / 2
+    });
+    
+    skSolve(sketch7);
+    
+  var extrude7 = opExtrude(context, id + "extrude7", {
+        "entities" : qSketchRegion(id + "sketch7"),
+        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sketch5")}).normal,
+        "endBound" : BoundingType.BLIND,
+        "endDepth" : 3 * millimeter
+    });
+    
+    
+    // Query the body created by "extrude3"
+    var bodyQueryExtrude3 = qCreatedBy(id + "extrude3", EntityType.BODY);
+
+    // Query the body created by "extrude4"
+    var bodyQueryExtrude4 = qCreatedBy(id + "extrude4", EntityType.BODY);
+    
+    // Query the body created by "extrude5"
+    var bodyQueryExtrude5 = qCreatedBy(id + "extrude5", EntityType.BODY);
+
+    // Query the body created by "extrude6"
+    var bodyQueryExtrude6 = qCreatedBy(id + "extrude6", EntityType.BODY);
+    
+     // Query the body created by "extrude7"
+    var bodyQueryExtrude7 = qCreatedBy(id + "extrude7", EntityType.BODY);
+
+    // Combine the queries for both bodies
+    var toolsQueryClip = qUnion([bodyQueryExtrude3, bodyQueryExtrude4]);
+    
+    var toolsQueryHandle = qUnion([bodyQueryExtrude5, bodyQueryExtrude6, bodyQueryExtrude7]);
+    
+    // // Perform the Boolean union operation for the clip
+    opBoolean(context, id + "booleanUnion", {
+        "tools" : toolsQueryClip,
+        "operationType" : BooleanOperationType.UNION
+    });
+    
+  opBoolean(context, id + "booleanUnion2", {
+        "tools" : toolsQueryHandle,
+        "operationType" : BooleanOperationType.UNION
+    });
+
+}
+
+
