@@ -1,6 +1,18 @@
+/*    
+    Moiré Widgets Features - Daniel Campos Zamora.
+    
+    This custom feature generates the mechanical components for 
+    moiré widgets. 
+    
+    V1 - December 2023
+    V2 - May 2024
+*/    
+
+
 FeatureScript 2144;
 import(path : "onshape/std/geometry.fs", version : "2144.0");
 
+import(path : "f3f23e78b88e7117cdc3ae6a", version : "b70913e528192f1a483b3907");
 
 export const DIAL_DIAMETER_BOUNDS = 
 {
@@ -30,9 +42,9 @@ annotation { "Feature Type Name" : "Moire Widgets"}
 export const moireWidgets = defineFeature(function(context is Context, id is Id, definition is map)
     precondition
     {
-        // Ensure a part exists in the design
-        annotation{"Name" : "Face to Edit", "Filter" : EntityType.FACE, "MaxNumberOfPicks": 1}  
-        definition.faceToEdit is Query; 
+        
+        annotation { "Name" : "Part to Edit", "Filter" : EntityType.BODY && BodyType.SOLID, "MaxNumberOfPicks" : 1 }
+        definition.partToEdit is Query;
         
         if (definition.widgetType != undefined)
         {
@@ -44,7 +56,6 @@ export const moireWidgets = defineFeature(function(context is Context, id is Id,
         {
             annotation {"Name" : "Center Point", "Filter" : EntityType.VERTEX && SketchObject.YES, "MaxNumberOfPicks" : 1}
             definition.dialCenterPoint is Query; 
-            //  evVertexPoint(context, {'vertex' : pointQ}) to get its xyz location.
             
             annotation {"Name" : "dialOuterDiameter", "UIHint" : [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE],
                         "Description" : "Set the outer diameter for the dial."}
@@ -53,21 +64,12 @@ export const moireWidgets = defineFeature(function(context is Context, id is Id,
             annotation {"Name" : "dialInnerDiameter", "UIHint" : [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE],
                         "Description" : "Set the inner diameter for the dial."}
             isLength(definition.innerDiameter, NONNEGATIVE_LENGTH_BOUNDS);
-            
-            // annotation{"Name": "dialHeight",
-            //         "UIHint": [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE], 
-            //         "Description" : "Set the Height of the dial."}
-            // isLength(definition.dialHeight, NONNEGATIVE_LENGTH_BOUNDS);    
         }
         
         if (definition.widgetType == widgetType.SLIDER)
         {
-            annotation {"Name" : "Slider Edge ", "Filter" : EntityType.EDGE, "MaxNumberOfPicks" : 1}
+            annotation {"Name" : "Slider Edge ", "Filter" : EntityType.EDGE && SketchObject.YES && GeometryType.LINE, "MaxNumberOfPicks" : 1}
             definition.sliderEdge is Query; 
-            
-            annotation {"Name" : "sliderOpaque Window Length", "UIHint" : [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE],
-                        "Description" : "Set the Length of the slider."}
-            isLength(definition.sliderOpaqueLength, NONNEGATIVE_LENGTH_BOUNDS);
             
             annotation{"Name": "Window Height",
                     "UIHint": [UIHint.SHOW_LABEL, UIHint.REMEMBER_PREVIOUS_VALUE], 
@@ -80,6 +82,42 @@ export const moireWidgets = defineFeature(function(context is Context, id is Id,
             
         }
         
+        if (definition.widgetType == widgetType.JOYSTICK)
+        {
+            annotation {"Name" : "Insertion Point", "Filter" : EntityType.VERTEX && SketchObject.YES, "MaxNumberOfPicks" : 1}
+            definition.jsCenterPoint is Query; 
+            
+            annotation {"Name" : "Travel Distance", "Description" : "Set Button Height.", "UIHint" : [UIHint.SHOW_LABEL]}
+            isLength(definition.jsTravelDistance, NONNEGATIVE_LENGTH_BOUNDS); 
+        }
+        
+        if (definition.widgetType == widgetType.BUTTON)
+        {
+            annotation {"Name" : "Center Point", "Filter" : EntityType.VERTEX && SketchObject.YES, "MaxNumberOfPicks" : 1}
+            definition.buttonCenterPoint is Query; 
+            
+            annotation{"Name" : "Button Height", "Description" : "Set Button Height.", 
+                        "UIHint" : [UIHint.SHOW_LABEL]}
+            isLength(definition.buttonHeight, NONNEGATIVE_LENGTH_BOUNDS);
+            
+            annotation{"Name" : "Button Length", "Description" : "Set Button Side Length.", 
+                        "UIHint" : [UIHint.SHOW_LABEL]}
+            isLength(definition.buttonLength, NONNEGATIVE_LENGTH_BOUNDS);
+            
+            annotation{"Name" : "Spring Diameter", "Description" : "Set diameter of the spring.", 
+                        "UIHint" : [UIHint.SHOW_LABEL]}
+            isLength(definition.springDiameter, NONNEGATIVE_LENGTH_BOUNDS); 
+        }
+        
+        if (definition.widgetType == widgetType.SWITCH) 
+        {
+            annotation {"Name" : "Center Point", "Filter" : EntityType.VERTEX && SketchObject.YES, "MaxNumberOfPicks" : 1}
+            definition.switchCenterPoint is Query;
+            
+        }
+    
+    
+    
     }
     
     {
@@ -96,257 +134,294 @@ export const moireWidgets = defineFeature(function(context is Context, id is Id,
                             },
                         widgetType.BUTTON : function()
                             {
-                                println("BUTTON");
+                                makeButton(context, id, definition);
                             },
                         widgetType.JOYSTICK : function()
                             {
-                                println("JOYSTICK");
+                                makeJoystick(context, id, definition);
                             },
                         widgetType.SWITCH : function()
                             {
-                                println("SWITCH");
+                                makeSwitch(context, id, definition);
                             }
-                    }(); // <---- The parens make it execute once the switch is evaluated
+                }(); // <---- The parens make it execute once the switch is evaluated
     }
 );
-    
 
 function makeSlider(context is Context, id is Id, definition is map) 
 {
-    var windowOpaqueLength = definition.sliderOpaqueLength; 
-    var windowTransparentLength = definition.sliderTransparentLength; 
+
+    //Slider Base Variables 
     var windowHeight = definition.sliderHeight; 
-    var clipLength = windowTransparentLength + (6 * millimeter); 
-    var clipHeight = windowHeight + (15 * millimeter) ; 
-    
-    var baseLength = windowOpaqueLength + (10 * millimeter); 
-    var baseWidth = windowHeight * 2 + (5 * millimeter); 
+    var baseWidth = definition.sliderHeight + 25 * millimeter; 
     var baseThickness = 2 * millimeter; 
+    var moirePadding = 2 * millimeter;
+    var wallThickness = 2 * millimeter;
+    var offset is ValueWithUnits = 0.25 * millimeter;
     
-    var sliderSketch1 = newSketch(context, id + "sliderSketch1", {
-            // "sketchPlane" : qCreatedBy(makeId("Top"), EntityType.FACE)
-            "sketchPlane" : definition.faceToEdit
+    //Slider Clip Variables
+    var sliderClipWidth = 25 * millimeter;
+    var clipLength = definition.sliderTransparentLength + (moirePadding * 2); 
+    var sliderClipHeights = 10 * millimeter; 
+    var sliderClipSlotWidth = 5 * millimeter; 
+    var sliderBodyTopPosition = baseWidth / 2 - (windowHeight + moirePadding * 2 + wallThickness);
+    var sliderClipBottomPosition = -baseWidth / 2 + wallThickness;
+    var sliderClipBodyDimension = abs(sliderBodyTopPosition - sliderClipBottomPosition);
+    
+    var sliderClipMidPosition = sliderClipBottomPosition + sliderClipBodyDimension / 2; 
+      
+    //EVALUE INPUT GEOMETRY and INITIAL SKETCH COORDINATE
+    var sliderEndPoints is Query = qAdjacent(definition.sliderEdge, AdjacencyType.VERTEX, EntityType.VERTEX);
+    
+    var sliderStartPosition is Vector = evVertexPoint(context, {
+            "vertex" : qNthElement(sliderEndPoints, 0)
+    });
+        
+    var sliderEndPosition is Vector = evVertexPoint(context, {
+            "vertex" : qNthElement(sliderEndPoints, 1)
     });
     
+    var sliderXDirection is Vector = normalize(sliderEndPosition - sliderStartPosition);
+    
+    var zDirection is Vector = evOwnerSketchPlane(context, {
+            "entity" : definition.sliderEdge
+    }).normal;
+
+    
+    var coordSys is CoordSystem = coordSystem(sliderStartPosition, sliderXDirection, zDirection);
+    
+    var sliderStartPlane is Plane = plane(coordSys); 
+    
+    // MAKE SLIDER BASE 
+    var sliderSketch1 = newSketchOnPlane(context, id + "sketch1", {
+            "sketchPlane" : sliderStartPlane
+    });
+    
+    var sliderLength is ValueWithUnits = norm(sliderEndPosition - sliderStartPosition);
+    
     skRectangle(sliderSketch1, "rectangle1", {
-            "firstCorner" : vector(-baseLength/2, -baseWidth/2) ,
-            "secondCorner" : vector(baseLength/2, baseWidth/2)
+            "firstCorner" : vector(0 * millimeter, -baseWidth/ 2),
+            "secondCorner" : vector(sliderLength, baseWidth/ 2)
     });
     
     skSolve(sliderSketch1);
     
-    opExtrude(context, id + "sliderExtrude1", {
-            "entities" : qSketchRegion(id + "sliderSketch1"),
-            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sliderSketch1")}).normal,
+    opExtrude(context, id + "sliderBaseExtrude", {
+            "entities" : qSketchRegion(id + "sketch1"),
+            "direction" : zDirection,
             "endBound" : BoundingType.BLIND,
             "endDepth" : baseThickness
     });
-    
-    opBoolean(context, id + "sliderBoolean1", {
-            "tools" : qBodyType(qEverything(EntityType.BODY), BodyType.SOLID),
-            "operationType" : BooleanOperationType.UNION
+        
+    //PLANE RESULTING FROM EXTUDE
+    var clipStartPlane = evPlane(context, {
+            "face" : qCapEntity(id + "sliderBaseExtrude", CapType.END, EntityType.FACE)
     });
     
-    //Begin sketches for slider clip
-    
-    var clipSketch1 = newSketch(context, id + "clipSketch1", {
-            "sketchPlane" :qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
+    // MAKE CUTOUT FOR MOIRE OPAQUE WINDOW 
+    var sliderSketch2 = newSketchOnPlane(context, id + "sliderSketch2", {
+            "sketchPlane" : clipStartPlane
     });
     
-    skRectangle(clipSketch1, "clipRectangle1", {
-            "firstCorner" : vector(-clipLength/2,  baseWidth/2),
-            "secondCorner" : vector(clipLength/2, -baseWidth/2 + 3 * millimeter)
+    skRectangle(sliderSketch2, "rectangle1", {
+            "firstCorner" : vector(-sliderLength/2 + moirePadding , baseWidth / 2 - moirePadding) ,
+            "secondCorner" : vector(sliderLength/2 - moirePadding, baseWidth / 2 - moirePadding - windowHeight)
+    });
+
+    
+    skSolve(sliderSketch2);
+    
+    opExtrude(context, id + "sliderExtrude2", {
+            "entities" : qSketchRegion(id + "sliderSketch2"),
+            "direction" : -zDirection,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : 0.25 * millimeter
+    });
+    
+    opBoolean(context, id + "boolean1", {
+            "tools" : qCreatedBy(id + "sliderExtrude2", EntityType.BODY),
+            "targets" : qCreatedBy(id + "sliderBaseExtrude", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
+    });
+    
+    // Make Slider Clip
+   
+    var clipSketch1 = newSketchOnPlane(context, id + "clipSketch1", {
+            "sketchPlane" : clipStartPlane
+    });
+    
+    skRectangle(clipSketch1, "rectangle1", {
+            "firstCorner" : vector(-clipLength/2, (-baseWidth / 2) + wallThickness),
+            "secondCorner" : vector(clipLength/2, baseWidth / 2 ) 
     });
     
     skSolve(clipSketch1);
     
-    opExtrude(context, id + "clipExtrude1", {
-            "entities" : qSketchRegion(id + "clipSketch1"),
-            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sliderSketch1")}).normal,
+    opExtrude(context, id + "clipBaseExtrude", {
+            "entities" :  qSketchRegion(id + "clipSketch1"),
+            "direction" : zDirection, 
             "endBound" : BoundingType.BLIND,
             "endDepth" : 1 * millimeter
     });
     
-    var clipSketch2 = newSketch(context, id + "clipSketch2", {
-            "sketchPlane" : qCapEntity(id + "clipExtrude1", CapType.END, EntityType.FACE)
+    
+    // Slider Clip Body
+    var clipSketch2 = newSketchOnPlane(context, id + "clipSketch2", {
+            "sketchPlane" : clipStartPlane
     });
     
-    skRectangle(clipSketch2, "clipRectangle2", {
-            "firstCorner" : vector(-clipLength/2 + (2 * millimeter), windowHeight) ,
-            "secondCorner" : vector(clipLength/2 - (2 * millimeter), 0 * millimeter) 
+    skRectangle(clipSketch2, "rectangle1", {
+            "firstCorner" : vector(-clipLength/2, -(baseWidth / 2) + wallThickness),
+            "secondCorner" : vector(clipLength/2, baseWidth / 2 - (windowHeight + moirePadding * 2 + wallThickness))
     });
     
     skSolve(clipSketch2);
-    //make window insert
     
-    extrude(context, id + "clipExtrude2", {
+    opExtrude(context, id + "clipBodyExtrude", {
             "entities" : qSketchRegion(id + "clipSketch2"),
+            "direction" : zDirection,
             "endBound" : BoundingType.BLIND,
-            "depth" : 1 * millimeter,
-            "oppositeDirection" : true,
-            "operationType" : NewBodyOperationType.REMOVE,
-            "defaultScope" : false, 
-            "booleanScope" : qCreatedBy(id + "clipExtrude1", EntityType.BODY)
-            
+            "endDepth" : sliderClipHeights
     });
     
-    var sliderSketch2 = newSketch(context, id + "sliderSketch2", {
-            "sketchPlane" :qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
+    //Slider Clip Pin/Slot 
+    var clipSketch3 = newSketchOnPlane(context, id + "clipSketch3", {
+            "sketchPlane" : clipStartPlane
     });
     
-    skRectangle(sliderSketch2, "rectangle2", {
-            "firstCorner" : vector(-windowOpaqueLength/2, windowHeight),
-            "secondCorner" : vector(windowOpaqueLength/2, 0 * millimeter) 
-    });
-    
-    skSolve(sliderSketch2);
-    
-    extrude(context, id + "sliderExtrude2", {
-            "entities" : qSketchRegion(id + "sliderSketch2"),
-            "endBound" : BoundingType.BLIND,
-            "depth" : 0.5 * millimeter,
-            "oppositeDirection" : true,
-            "operationType" : NewBodyOperationType.REMOVE,
-            "defaultScope" : true, 
-            
-    });
-    
-    var clipSketch3 = newSketch(context, id + "clipSketch3", {
-            "sketchPlane" : qCapEntity(id + "clipExtrude1", CapType.END, EntityType.FACE)
-    });
-    
-    skRectangle(clipSketch3, "clipRectangle3", {
-            "firstCorner" : vector(-clipLength/2,  -2 * millimeter),
-            "secondCorner" : vector(clipLength/2, -baseWidth/2 + (3 * millimeter))
+    skRectangle(clipSketch3, "rectangle1", {
+            "firstCorner" : vector(-clipLength/2, sliderClipMidPosition - (sliderClipSlotWidth/2)),
+            "secondCorner" : vector(clipLength/2, sliderClipMidPosition + (sliderClipSlotWidth/2))
     });
     
     skSolve(clipSketch3);
     
-    opExtrude(context, id + "clipExtrude3", {
+    opExtrude(context, id + "clipPinExtrude", {
             "entities" : qSketchRegion(id + "clipSketch3"),
-            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "clipSketch3")}).normal,
+            "direction" : zDirection,
             "endBound" : BoundingType.BLIND,
-            "endDepth" : 3 * millimeter
+            "endDepth" : sliderClipHeights * 2
     });
     
-    var clipSketch4 = newSketch(context, id + "clipSketch4", {
-            "sketchPlane" : qCapEntity(id + "clipExtrude3", CapType.END, EntityType.FACE)
+    //Make Cutout on Slider Clip for Moire
+    
+    var sliderClipWindowSketch = newSketchOnPlane(context, id + "sliderClipWindowSketch", {
+            "sketchPlane" : clipStartPlane
     });
     
-    skRectangle(clipSketch4, "clipRectangle4", {
-            "firstCorner" : vector(-clipLength/2,  -8 * millimeter),
-            "secondCorner" : vector(clipLength/2, -baseWidth/2 + (6 * millimeter))
+    skRectangle(sliderClipWindowSketch, "rectangle1", {
+            "firstCorner" : vector(-clipLength/2 + moirePadding, baseWidth/2 - moirePadding),
+            "secondCorner" : vector(clipLength/2 - moirePadding, baseWidth/2 - moirePadding - windowHeight)
     });
     
-    skSolve(clipSketch4); 
+    skSolve(sliderClipWindowSketch);
     
-    opExtrude(context, id + "clipExtrude4", {
-            "entities" : qSketchRegion(id + "clipSketch4"),
-            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "clipSketch4")}).normal,
+    opExtrude(context, id + "sliderClipWindowExtrude", {
+            "entities" : qSketchRegion(id + "sliderClipWindowSketch"),
+            "direction" : zDirection,
+            "endBound" : BoundingType.THROUGH_ALL,
+    });
+        
+    opBoolean(context, id + "sliderClipWindowBoolean", {
+            "tools" : qCreatedBy(id + "sliderClipWindowExtrude", EntityType.BODY),
+            "targets" : qCreatedBy(id + "clipBaseExtrude", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
+    });
+      
+    //Combine Clip Bodies
+        opBoolean(context, id + "sliderClipBoolean", {
+            "tools" : qUnion(qCreatedBy(id + "clipBaseExtrude", EntityType.BODY), 
+                            qCreatedBy(id + "clipBodyExtrude", EntityType.BODY),
+                            qCreatedBy(id + "clipPinExtrude", EntityType.BODY)),
+            "operationType" : BooleanOperationType.UNION
+    });
+    
+    //Make Slider Body 
+    var sliderBodySketch1 = newSketchOnPlane(context, id + "sliderBodySketch1", {
+            "sketchPlane" : clipStartPlane
+    });
+    
+    skRectangle(sliderBodySketch1, "rectangle1", {
+            "firstCorner" : vector(-sliderLength/2,  -baseWidth/2),
+            "secondCorner" : vector(sliderLength/2, baseWidth / 2 - (windowHeight + moirePadding * 2))
+    });
+    
+    skSolve(sliderBodySketch1);
+        
+    opExtrude(context, id + "sliderBodyExtrude", {
+            "entities" : qSketchRegion(id + "sliderBodySketch1"),
+            "direction" : zDirection,
+            "endBound" : BoundingType.BLIND, 
+            "endDepth" : sliderClipHeights + offset + wallThickness
+    });
+    
+    var sliderBodyHollowSketch = newSketchOnPlane(context, id + "sliderBodyHollowSketch", {
+            "sketchPlane" : clipStartPlane
+    });
+    
+    skRectangle(sliderBodyHollowSketch, "rectangle1", {
+            "firstCorner" : vector(-sliderLength/2 + moirePadding, sliderClipBottomPosition),
+            "secondCorner" : vector(sliderLength/2 - moirePadding, baseWidth / 2 - (windowHeight + moirePadding * 2 + wallThickness))
+    });
+    
+    skSolve(sliderBodyHollowSketch);
+    
+    opExtrude(context, id + "sliderBodyHollowExtrude", {
+            "entities" : qSketchRegion(id + "sliderBodyHollowSketch"),
+            "direction" : zDirection, 
             "endBound" : BoundingType.BLIND,
-            "endDepth" : 8 * millimeter
+            "endDepth" : sliderClipHeights
     });
     
-       // Query the body created by "extrude1"
-    var clipBodyQueryExtrude2 = qCreatedBy(id + "clipExtrude1", EntityType.BODY);
-
-    // Query the body created by "extrude3"
-    var  clipBodyQueryExtrude3 = qCreatedBy(id + "clipExtrude3", EntityType.BODY);
-    
-    // Query the body created by "extrude4"
-    var clipBodyQueryExtrude4 = qCreatedBy(id + "clipExtrude4", EntityType.BODY);
-
-
-    // Combine the queries for both bodies
-    var toolsQuerySliderClip = qUnion([clipBodyQueryExtrude2, clipBodyQueryExtrude3, clipBodyQueryExtrude4]);
-    
-    // // Perform the Boolean union operation for the clip
-    opBoolean(context, id + "sliderClipBooleanUnion", {
-        "tools" : toolsQuerySliderClip,
-        "operationType" : BooleanOperationType.UNION
+    var sliderBodyOpeningSketch = newSketchOnPlane(context, id + "sliderBodyOpeningSketch", {
+            "sketchPlane" : clipStartPlane
     });
     
-    var sliderSketch3 = newSketch(context, id + "sliderSketch3", {
-            "sketchPlane" :  qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
+    skRectangle(sliderBodyOpeningSketch, "rectangle1", {
+            "firstCorner" : vector(-sliderLength/2 + wallThickness, -baseWidth/2 + wallThickness),
+            "secondCorner" : vector(sliderLength/2 - wallThickness, baseWidth /2)
     });
     
-    skRectangle(sliderSketch3, "rectangle3", {
-            "firstCorner" : vector(-baseLength/2, -baseWidth/2) ,
-            "secondCorner" : vector(baseLength/2, 0 * millimeter)
-    });
+    skSolve(sliderBodyOpeningSketch);
     
-    skSolve(sliderSketch3);
-    
-    opExtrude(context, id + "sliderExtrude3", {
-            "entities" : qSketchRegion(id + "sliderSketch3"),
-            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sliderSketch3")}).normal,
+    opExtrude(context, id + "sliderBodyOpeningExtrude", {
+            "entities" : qSketchRegion(id + "sliderBodyOpeningSketch"),
+            "direction" : zDirection,
             "endBound" : BoundingType.BLIND,
-            "endDepth" : 9 * millimeter
+            "endDepth" : 1.2 * millimeter
     });
     
-    var sliderSketch4 = newSketch(context, id + "sliderSketch4", {
-            "sketchPlane" :  qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
+    var sliderBodySlotSketch = newSketchOnPlane(context, id + "sliderBodySlotSketch", {
+            "sketchPlane" : clipStartPlane
+    });
+    skRectangle(sliderBodySlotSketch, "rectangle1", {
+            "firstCorner" : vector( -sliderLength/2 + wallThickness,  sliderClipMidPosition - (sliderClipSlotWidth/2)),
+            "secondCorner" : vector(sliderLength/2 - wallThickness, sliderClipMidPosition + (sliderClipSlotWidth/2))
+    });
+    skSolve(sliderBodySlotSketch);
+    
+    opExtrude(context, id + "sliderBodySlotExtrude", {
+            "entities" : qSketchRegion(id + "sliderBodySlotSketch"),
+            "direction" : zDirection,
+            "endBound" : BoundingType.THROUGH_ALL,
     });
     
-    skRectangle(sliderSketch4, "removeRectangle1", {
-            "firstCorner" : vector(-baseLength/2 + 3 * millimeter, 0 * millimeter) ,
-            "secondCorner" : vector(baseLength/2 - 3 * millimeter, -baseWidth/2 + (3 * millimeter))
+    //COMBINE BODIES
+    
+    opBoolean(context, id + "SliderBodyBoolean1", {
+            "tools" : qUnion(qCreatedBy(id + "sliderBodySlotExtrude", EntityType.BODY),
+                             qCreatedBy(id + "sliderBodyOpeningExtrude", EntityType.BODY),
+                             qCreatedBy(id + "sliderBodyHollowExtrude", EntityType.BODY)
+                            ),
+            "targets" : qCreatedBy(id + "sliderBodyExtrude", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
     });
     
-    skSolve(sliderSketch4);
-    
-    extrude(context, id + "sliderExtrude4", {
-            "entities" : qSketchRegion(id + "sliderSketch4"),
-            "endBound" : BoundingType.BLIND,
-            "depth" : 1.2 * millimeter,
-            "oppositeDirection" : false,
-            "operationType" : NewBodyOperationType.REMOVE,
-            "defaultScope" : false,
-            "booleanScope" : qCreatedBy(id + "sliderExtrude3", EntityType.BODY)     
+    opBoolean(context, id + "SliderBodyBoolean2", {
+            "tools" : qUnion([qCreatedBy(id + "sliderBodyExtrude", EntityType.BODY), 
+                              qCreatedBy(id + "sliderBaseExtrude", EntityType.BODY)]),
+            "operationType" : BooleanOperationType.UNION
     });
-    
-    var sliderSketch5 = newSketch(context, id + "sliderSketch5", {
-            "sketchPlane" : qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
-    });
-    
-    skRectangle(sliderSketch5, "removeRectangle2", {
-            "firstCorner" : vector(-baseLength/2 + 3 * millimeter, -2 * millimeter),
-            "secondCorner" : vector(baseLength/2 - 3 * millimeter, -baseWidth/2 + (3 * millimeter))
-    });
-    
-    skSolve(sliderSketch5);
-    
-    extrude(context, id + "sliderExtrude5", {
-            "entities" : qSketchRegion(id + "sliderSketch5"),
-            "endBound" : BoundingType.BLIND,
-            "depth" : 4 * millimeter,
-            "oppositeDirection" : false,
-            "operationType" : NewBodyOperationType.REMOVE,
-            "defaultScope" : false,
-            "booleanScope" : qCreatedBy(id + "sliderExtrude3", EntityType.BODY)     
-    });
-    
-    var sliderSketch6 = newSketch(context, id + "sliderSketch6", {
-            "sketchPlane" :  qCapEntity(id + "sliderExtrude1", CapType.END, EntityType.FACE)
-    });
-    
-    skRectangle(sliderSketch6, "removeRectangle3", {
-            "firstCorner" : vector(-baseLength/2 + 3 * millimeter, -8 * millimeter),
-            "secondCorner" : vector(baseLength/2 - 3 * millimeter, -baseWidth/2 + (6 * millimeter))
-    });
-    
-    skSolve(sliderSketch6);
-
-    extrude(context, id + "sliderExtrude6", {
-            "entities" : qSketchRegion(id + "sliderSketch6"),
-            "endBound" : BoundingType.BLIND,
-            "depth" : 12 * millimeter,
-            "oppositeDirection" : false,
-            "operationType" : NewBodyOperationType.REMOVE,
-            "defaultScope" : false,
-            "booleanScope" : qCreatedBy(id + "sliderExtrude3", EntityType.BODY)     
-    });
-    
     
 }
 
@@ -357,8 +432,7 @@ function makeDial(context is Context, id is Id, definition is map)
     // Setup  Relevant Dimensions, Directions, Geometry Points
     var dialCenter = evVertexPoint(context, { "vertex" : definition.dialCenterPoint });
     var dialCoords is map = {"X" : dialCenter[0], "Y" : dialCenter[1], "Z" : dialCenter[2]};
-    println(dialCoords);
-    var normal = evOwnerSketchPlane(context, {
+    var zDir = evOwnerSketchPlane(context, {
             "entity" : definition.dialCenterPoint
     }).normal;
     
@@ -366,19 +440,23 @@ function makeDial(context is Context, id is Id, definition is map)
     var innerDiameter = definition.innerDiameter; 
     var height = definition.height;
     var baseOffset = 20 * millimeter; 
-    var baseHeight = 3 * millimeter; 
+    var baseHeight = 2.5 * millimeter; 
     var baseInnerHeight = 3 * millimeter;
     var couplerThickness = 3 * millimeter; 
+    var opaqueDiskThickness = 3 * millimeter; 
     var tolerance = 0.5 * millimeter;  
-    var offsetDistance = 5 * millimeter;
+    var offsetDistance = 2 * millimeter;
+    var couplerWidth = 3 * millimeter;
+    
+    var handleHeight = 5 * millimeter; 
     
     //MAKE INITIAL SKETCH FOR EXTRUSIONS
-    var initPlane = plane(dialCenter, normal); 
+    var initPlane = plane(dialCenter, zDir); 
     
     var dialSketch1  = newSketchOnPlane(context, id + "dialSketch1", {
             "sketchPlane" : initPlane
     });
-    // Create sketch entities here
+
     skCircle(dialSketch1, "circle1", {
             "center" : vector(0, 0) * millimeter,
             "radius" : (outerDiameter) / 2 
@@ -389,20 +467,11 @@ function makeDial(context is Context, id is Id, definition is map)
     // Extrude Base 
     opExtrude(context, id + "dialExtrude1", {
             "entities" : qSketchRegion(id + "dialSketch1"),
-            "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "dialSketch1")}).normal,
+            "direction" : zDir,
             "endBound" : BoundingType.BLIND,
             "endDepth" : baseHeight
     });
-    
-    // Boolean Base to existing Part
-    opBoolean(context, id + "dialBoolean1", {
-            "tools" : qBodyType(qEverything(EntityType.BODY), BodyType.SOLID),
-            "operationType" : BooleanOperationType.UNION
-    });
-    
-    opDeleteBodies(context, id + "deleteBodies1", {
-            "entities" : qCreatedBy(id + "dialSketch1", EntityType.BODY)
-    });
+
     
     var dialSketch2 = newSketchOnPlane(context, id + "dialSketch2", {
             "sketchPlane" : initPlane
@@ -417,161 +486,1031 @@ function makeDial(context is Context, id is Id, definition is map)
     
     opExtrude(context, id + "dialExtrude2", {
         "entities" : qSketchRegion(id + "dialSketch2"),
-        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "dialSketch2")}).normal,
+        "direction" : zDir,
         "endBound" : BoundingType.BLIND,
-        "endDepth" : baseInnerHeight * 2
+        "endDepth" : baseHeight + opaqueDiskThickness
     });
     
-    opBoolean(context, id + "boolean2", {
-            "tools" : qBodyType(qEverything(EntityType.BODY), BodyType.SOLID),
-            "operationType" : BooleanOperationType.UNION
+    
+    // Coupler Geometry 
+    var sketch3 = newSketchOnPlane(context, id + "sketch3", {
+            "sketchPlane" : initPlane
+    });
+
+    
+    skRectangle(sketch3, "rectangle1", {
+            "firstCorner" : vector(-innerDiameter/2 + offsetDistance,-couplerWidth/2), 
+            "secondCorner" : vector(innerDiameter/2 - offsetDistance, couplerWidth/2) 
     });
     
-    // Coupler Piece 
-    var sketch3 = newSketch(context, id + "sketch3", {
-            "sketchPlane" : qCapEntity(id + "extrude1", CapType.END, EntityType.FACE)
-            // "sketchPlane" : qTopPlane(EntityType.FACE)
-    });
-    
-  skCircle(sketch3, "circle3", {
-            "center" : vector(0, 0) * millimeter,
-            "radius" : innerDiameter / 2 + tolerance 
-    });
-    
-  skCircle(sketch3, "circle4", {
-            "center" : vector(0, 0) * millimeter,
-            "radius" : (innerDiameter + couplerThickness) / 2
-    });  
-    
+
     skSolve(sketch3);
     
-    opExtrude(context, id + "extrude3", {
-        "entities" : qSketchRegion(id + "sketch3", true),
-        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sketch3")}).normal,
-        "endBound" : BoundingType.BLIND,
-        "endDepth" : baseInnerHeight,
+    opExtrude(context, id + "dialExtrude3", {
+            "entities" : qSketchRegion(id + "sketch3"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : baseHeight + opaqueDiskThickness + couplerThickness
+    });
+    
+    
+    //OPAQUE DISK:
+
+    var diskStartPlane = evPlane(context, {
+            "face" : qCapEntity(id + "dialExtrude1", CapType.END, EntityType.FACE)
+    });
+    
+    var opaqueDiskSketch = newSketchOnPlane(context, id + "opaqueDiskSketch", {
+            "sketchPlane" : diskStartPlane
+    });
+    
+    skCircle(opaqueDiskSketch, "outerCircle", {
+            "center" : vector(0, 0) * inch,
+            "radius" : outerDiameter/2
+    });
+    
+    skSolve(opaqueDiskSketch);
+
+    opExtrude(context, id + "opaqueDiskExtrude", {
+            "entities" : qSketchRegion(id + "opaqueDiskSketch"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : opaqueDiskThickness
+    });
+    
+    var opaqueDiskSketch2 = newSketchOnPlane(context, id + "opaqueDiskSketch2", {
+            "sketchPlane" : diskStartPlane
+    });
+    
+    skCircle(opaqueDiskSketch2, "innerCircle", {
+            "center" : vector(0, 0) * inch,
+            "radius" : innerDiameter/2 + tolerance
+    });
+    
+    skSolve(opaqueDiskSketch2);
+
+    opExtrude(context, id + "opaqueDiskExtrude2", {
+            "entities" : qSketchRegion(id + "opaqueDiskSketch2"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : opaqueDiskThickness
+    });
+    
+    opBoolean(context, id + "diskBoolean", {
+            "tools" : qCreatedBy(id + "opaqueDiskExtrude2", EntityType.BODY),
+            "targets" : qCreatedBy(id + "opaqueDiskExtrude", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
+    });
+    
+    //HANDLE 
+    
+    var handleStartPlane = evPlane(context, {
+            "face" : qCapEntity(id + "dialExtrude2", CapType.END, EntityType.FACE)
+    });
+    
+    var handleSketch = newSketchOnPlane(context, id + "handleSketch", {
+            "sketchPlane" : handleStartPlane
+    });
+    
+    skCircle(handleSketch, "circle1", {
+            "center" : vector(0, 0) * inch,
+            "radius" : innerDiameter/2
+    });
+    
+    skSolve(handleSketch);
+    
+    opExtrude(context, id + "handleExtrude", {
+            "entities" : qSketchRegion(id + "handleSketch"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : handleHeight
+    });
+    
+    
+    var handleSketch2 = newSketchOnPlane(context, id + "handleSketch2", {
+            "sketchPlane" : handleStartPlane
+    });
+    
+    skRectangle(handleSketch2, "rectangle1", {
+            "firstCorner" : vector(-innerDiameter/2 + (offsetDistance - tolerance) ,-couplerWidth/2 - tolerance), 
+            "secondCorner" : vector(innerDiameter/2 - (offsetDistance - tolerance) , couplerWidth/2 + tolerance) 
+    });
+    
+    skSolve(handleSketch2);
+    
+    opExtrude(context, id + "handleExtrude2", {
+            "entities" : qSketchRegion(id + "handleSketch2"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : couplerThickness + tolerance
+    });
+    
         
+    var circularEdgeQuery = qCreatedBy(id + "handleExtrude", EntityType.EDGE);
+        
+    opChamfer(context, id + "chamfer1", {
+            "entities" : qNthElement(circularEdgeQuery, 1),
+            "chamferType" : ChamferType.EQUAL_OFFSETS,
+            "width" : 1 * millimeter
     });
     
-    var sketch4 = newSketch(context, id + "sketch4", {
-            "sketchPlane" : qCapEntity(id + "extrude1", CapType.END, EntityType.FACE)
-            // "sketchPlane" : qTopPlane(EntityType.FACE)
-    });
-    
-  skCircle(sketch4, "circle5", {
-            "center" : vector(0, 0) * millimeter,
-            "radius" : innerDiameter / 2 + 7 * millimeter
-    });
-    
-  skCircle(sketch4, "circle6", {
-            "center" : vector(0, 0) * millimeter,
-            "radius" : innerDiameter / 2 + tolerance 
-    });
-    
-    skSolve(sketch4); 
-    
-    var extrude4 = opExtrude(context, id + "extrude4", {
-        "entities" : qSketchRegion(id + "sketch4", true),
-        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sketch4")}).normal,
-        "endBound" : BoundingType.BLIND,
-        "endDepth" : 0.5 * millimeter,
-    });
-    
-    //Set geometry for the handle part of it. 
-    var sketch5 = newSketch(context, id + "sketch5", {
-            "sketchPlane" : qCapEntity(id + "extrude4", CapType.END, EntityType.FACE)
-            // "sketchPlane" : qTopPlane(EntityType.FACE)
-    });
-    
-    skCircle(sketch5, "circle6", {
-            "center" : vector(0, 0) * millimeter,
-            "radius" : (innerDiameter + couplerThickness) / 2 
-    });
-    
-    skCircle(sketch5, "circle7", {
-            "center" : vector(0, 0) * millimeter,
-            "radius" : innerDiameter / 2 + 3 * millimeter
-    });
-    
-    skSolve(sketch5); 
-
-    var extrude5 = opExtrude(context, id + "extrude5", {
-        "entities" : qSketchRegion(id + "sketch5", true),
-        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sketch5")}).normal,
-        "endBound" : BoundingType.BLIND,
-        "endDepth" : baseInnerHeight
-    });
-    
-    var sketch6 = newSketch(context, id + "sketch6", {
-            "sketchPlane" : qCapEntity(id + "extrude5", CapType.END, EntityType.FACE)
-            // "sketchPlane" : qTopPlane(EntityType.FACE)
-    });
-    
-    skCircle(sketch6, "circle8", {
-            "center" : vector(0, 0) * millimeter,
-            "radius" : innerDiameter / 2 + 3 * millimeter
-    });
-    
-    skSolve(sketch6);
-
-  var extrude6 = opExtrude(context, id + "extrude6", {
-        "entities" : qSketchRegion(id + "sketch6"),
-        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sketch5")}).normal,
-        "endBound" : BoundingType.BLIND,
-        "endDepth" : 15 * millimeter
-    });
-    
-    var sketch7 = newSketch(context, id + "sketch7", {
-            "sketchPlane" : qCapEntity(id + "extrude6", CapType.END, EntityType.FACE)
-            // "sketchPlane" : qTopPlane(EntityType.FACE)
-    });
-    
-    skCircle(sketch7, "circle9", {
-            "center" : vector(0, 0) * millimeter,
-            "radius" : (innerDiameter + couplerThickness) / 2
-    });
-    
-    skSolve(sketch7);
-    
-  var extrude7 = opExtrude(context, id + "extrude7", {
-        "entities" : qSketchRegion(id + "sketch7"),
-        "direction" : evOwnerSketchPlane(context, {"entity" : qSketchRegion(id + "sketch5")}).normal,
-        "endBound" : BoundingType.BLIND,
-        "endDepth" : 3 * millimeter
+    opBoolean(context, id + "handleBoolean", {
+            "tools" : qCreatedBy(id + "handleExtrude2", EntityType.BODY),
+            "targets" : qCreatedBy(id + "handleExtrude", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
     });
     
     
-    // Query the body created by "extrude3"
-    var bodyQueryExtrude3 = qCreatedBy(id + "extrude3", EntityType.BODY);
-
-    // Query the body created by "extrude4"
-    var bodyQueryExtrude4 = qCreatedBy(id + "extrude4", EntityType.BODY);
-    
-    // Query the body created by "extrude5"
-    var bodyQueryExtrude5 = qCreatedBy(id + "extrude5", EntityType.BODY);
-
-    // Query the body created by "extrude6"
-    var bodyQueryExtrude6 = qCreatedBy(id + "extrude6", EntityType.BODY);
-    
-     // Query the body created by "extrude7"
-    var bodyQueryExtrude7 = qCreatedBy(id + "extrude7", EntityType.BODY);
-
-    // Combine the queries for both bodies
-    var toolsQueryClip = qUnion([bodyQueryExtrude3, bodyQueryExtrude4]);
-    
-    var toolsQueryHandle = qUnion([bodyQueryExtrude5, bodyQueryExtrude6, bodyQueryExtrude7]);
-    
-    // // Perform the Boolean union operation for the clip
-    opBoolean(context, id + "booleanUnion", {
-        "tools" : toolsQueryClip,
-        "operationType" : BooleanOperationType.UNION
-    });
-    
-  opBoolean(context, id + "booleanUnion2", {
-        "tools" : toolsQueryHandle,
-        "operationType" : BooleanOperationType.UNION
+    opBoolean(context, id + "dialBoolean", {
+            "tools" : qUnion([qCreatedBy(id + "dialExtrude1", EntityType.BODY), 
+                            qCreatedBy(id + "dialExtrude2", EntityType.BODY),
+                            qCreatedBy(id + "dialExtrude3", EntityType.BODY),
+                            definition.partToEdit
+                            ]),
+            "operationType" : BooleanOperationType.UNION
     });
 
 }
+
+//Button with Sliders
+function makeButton(context is Context, id is Id, definition is map) 
+{
+    
+    var buttonCenter = evVertexPoint(context, { "vertex" : definition.buttonCenterPoint });
+    var buttonCenterCoords is map = {"X" : buttonCenter[0], "Y" : buttonCenter[1], "Z" : buttonCenter[2]};
+    var zDir = evOwnerSketchPlane(context, {
+            "entity" : definition.buttonCenterPoint
+    }).normal;
+    
+    var buttonDiameter = (2 * definition.buttonLength  / 3);
+    var buttonSideLength = definition.buttonLength;
+    var wallThickness = 3 * millimeter;
+    var tolerance = 0.2 * millimeter;
+    var buttonCoreHeight = definition.buttonHeight * 2 / 3;
+    var buttonWindowLength = buttonSideLength - (wallThickness  + 1 * millimeter) * 2;
+    
+    var buttonStartPlane = plane(buttonCenter, zDir);
+    
+    var buttonSketch1 = newSketchOnPlane(context, id + "buttonSketch1", {
+            "sketchPlane" : buttonStartPlane
+    });
+    
+    skRectangle(buttonSketch1, "rectangle1", {
+            "firstCorner" : vector(-buttonSideLength/2, -buttonSideLength/2),
+            "secondCorner" : vector(buttonSideLength/2, buttonSideLength/2)
+    });
+    
+    skSolve(buttonSketch1);
+    
+    opExtrude(context, id + "buttonExtrude1", {
+            "entities" : qSketchRegion(id + "buttonSketch1"),
+            "direction" : zDir, 
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : definition.buttonHeight
+    });
+    
+    var buttonSketch2 = newSketchOnPlane(context, id + "buttonSketch2", {
+            "sketchPlane" : buttonStartPlane
+    });
+    
+    skRectangle(buttonSketch2, "rectangle1", {
+            "firstCorner" : vector(-buttonSideLength/2 + (wallThickness - tolerance) , -buttonSideLength/2 + (wallThickness - tolerance)),
+            "secondCorner" : vector(buttonSideLength/2 - (wallThickness - tolerance) , buttonSideLength/2 - (wallThickness - tolerance))
+    });
+    
+    skSolve(buttonSketch2);
+    
+    opExtrude(context, id + "buttonExtrude2", {
+            "entities" : qSketchRegion(id + "buttonSketch2"),
+            "direction" : zDir, 
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : definition.buttonHeight - wallThickness 
+    });
+    
+    var buttonBaseSketch1 = newSketchOnPlane(context, id + "buttonBaseSketch1", {
+            "sketchPlane" : buttonStartPlane
+    });
+    
+    skRectangle(buttonBaseSketch1, "rectangle1", {
+            "firstCorner" : vector(-buttonSideLength/2 + wallThickness, -buttonSideLength/2 + wallThickness),
+            "secondCorner" : vector(buttonSideLength/2 - wallThickness, buttonSideLength/2 - wallThickness)
+    });
+    
+    skSolve(buttonBaseSketch1);
+    opExtrude(context, id + "buttonBaseExtrude", {
+            "entities" : qSketchRegion(id + "buttonBaseSketch1"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : 0.4 * millimeter
+    });
+    
+    var baseSpringHolderSketch = newSketchOnPlane(context, id + "baseSpringHolderSketch", {
+            "sketchPlane" : buttonStartPlane
+    });
+    
+    skCircle(baseSpringHolderSketch, "circle1", {
+            "center" : vector(0, 0) * inch,
+            "radius" : definition.springDiameter / 2
+    });
+    
+    skSolve(baseSpringHolderSketch);
+    
+    extrude(context, id + "springExtrude1", {
+            "entities" : qSketchRegion(id + "baseSpringHolderSketch"),
+            "wallShape" : qSketchRegion(id + "baseSpringHolderSketch"),
+            "endBound" : BoundingType.BLIND,
+            "depth" : wallThickness,
+            "bodyType" : ExtendedToolBodyType.THIN,
+            "operationType" : NewBodyOperationType.ADD,
+            "defaultScope" : false, 
+            "booleanScope" : qCreatedBy(id + "buttonBaseExtrude", EntityType.BODY),
+            "thickness1" : wallThickness, //outer thickness
+            "thickness2" : 0 * millimeter // inner thickness
+    });
+    
+    var buttonHoleSketch = newSketchOnPlane(context, id + "buttonHoleSketch", {
+            "sketchPlane" : buttonStartPlane
+    });
+    
+    skCircle(buttonHoleSketch, "circle1", {
+            "center" : vector(0, 0) * inch,
+            "radius" : buttonDiameter / 2
+    });
+    
+    skSolve(buttonHoleSketch);
+    
+    opExtrude(context, id + "buttonHoleExtrude", {
+            "entities" : qSketchRegion(id + "buttonHoleSketch"),
+            "direction" : zDir,
+            "endBound" : BoundingType.THROUGH_ALL,
+    });
+    
+    opBoolean(context, id + "boolean1", {
+            "tools" : qUnion([qCreatedBy(id + "buttonExtrude2", EntityType.BODY), 
+                                qCreatedBy(id + "buttonHoleExtrude", EntityType.BODY)]),
+            "targets" : qCreatedBy(id + "buttonExtrude1", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
+    });
+    
+    
+    //Button Solid Moiré Part 
+    
+    var buttonCoreCylinderSketch = newSketchOnPlane(context, id + "buttonCoreCylinderSketch", {
+            "sketchPlane" : buttonStartPlane
+    });
+    
+    skCircle(buttonCoreCylinderSketch, "circle1", {
+            "center" : vector(0, 0) * inch,
+            "radius" : (buttonDiameter / 2) - tolerance
+    });
+    
+    skSolve(buttonCoreCylinderSketch);
+    
+    opExtrude(context, id + "buttonCoreExtrude1", {
+            "entities" : qSketchRegion(id + "buttonBaseSketch1"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : buttonCoreHeight
+    });
+    
+    
+    opExtrude(context, id + "buttonCoreExtrude2", {
+            "entities" : qSketchRegion(id + "buttonCoreCylinderSketch"),
+            "direction" : zDir,
+            "endBound" : BoundingType.UP_TO_SURFACE,
+            "endBoundEntity" : qCapEntity(id + "buttonExtrude1", CapType.END, EntityType.FACE)
+    });
+    
+    //Button Core Spring Holder 
+    
+    var buttonCoreSpringSketch = newSketchOnPlane(context, id + "buttonCoreSpringSketch", {
+            "sketchPlane" : buttonStartPlane
+    });
+    
+    skCircle(buttonCoreSpringSketch, "circle1", {
+            "center" : vector(0, 0) * inch,
+            "radius" : (definition.springDiameter + tolerance) / 2 + wallThickness 
+    });
+    
+    skSolve(buttonCoreSpringSketch);
+    
+    opExtrude(context, id + "buttonCoreSpringExtrude", {
+            "entities" : qSketchRegion(id + "buttonCoreSpringSketch"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : wallThickness + tolerance
+    });
+    
+    //Windows 
+    
+    var buttonWindowSketch = newSketchOnPlane(context, id + "buttonWindowSketch", {
+            "sketchPlane" : buttonStartPlane
+    });
+    
+    skRectangle(buttonWindowSketch, "rectangle1", {
+            "firstCorner" : vector(-buttonWindowLength/2, -buttonSideLength/2) ,
+            "secondCorner" : vector(buttonWindowLength/2, buttonSideLength/2)
+    });
+    
+    skSolve(buttonWindowSketch);
+    
+    extrude(context, id + "buttonWindowExtrude", {
+            "entities" : qSketchRegion(id + "buttonWindowSketch"),
+            "endBound" : BoundingType.BLIND,
+            "operationType" : NewBodyOperationType.REMOVE,
+            "defaultScope" : false, 
+            "booleanScope" : qCreatedBy(id + "buttonExtrude1", EntityType.BODY),
+            "depth" : definition.buttonHeight - wallThickness, 
+    });
+    
+    //Combine Bodies and Booleans 
+    
+    opBoolean(context, id + "buttonMerge", {
+            "tools" : qUnion([definition.partToEdit,
+                             qCreatedBy(id + "buttonBaseExtrude", EntityType.BODY)]),
+            "operationType" : BooleanOperationType.UNION
+    });
+    
+    opBoolean(context, id + "buttonCoreBoolean1", {
+            "tools" : qUnion([qCreatedBy(id + "buttonCoreExtrude1", EntityType.BODY), 
+                              qCreatedBy(id + "buttonCoreExtrude2", EntityType.BODY)]),
+            "operationType" : BooleanOperationType.UNION
+    });
+    
+    opBoolean(context, id + "buttonCoreBoolean2", {
+            "tools" : qCreatedBy(id + "buttonCoreSpringExtrude", EntityType.BODY),
+            "targets" : qCreatedBy(id + "buttonCoreExtrude1", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
+    });
+}
+
+//Function to make Joystick
+function makeJoystick(context is Context, id is Id, definition is map)
+{
+    
+    var jsCenter = evVertexPoint(context, { "vertex" : definition.jsCenterPoint });
+    var jsCenterCoords is map = {"X" : jsCenter[0], "Y" : jsCenter[1], "Z" : jsCenter[2]};
+    var zDir = evOwnerSketchPlane(context, {
+            "entity" : definition.jsCenterPoint
+    }).normal;
+    var jsDiameter = 15 * millimeter;
+    var jsStandoffHeight = 8 * millimeter; 
+    var jsStandoffLength = 8 * millimeter; 
+    var jsTravelDistance = definition.jsTravelDistance; 
+    
+    var lipWidth = 1.8 * millimeter; 
+    var crossBeamWidth = 8 * millimeter; 
+    var tolerance = 0.2 * millimeter; 
+    var initPlane =  plane(jsCenter, zDir);
+    var guideRailThickness = 2 * millimeter; 
+    var pinWidth = crossBeamWidth - guideRailThickness * 2; 
+    var jsHolderOverhang =  3.5 * millimeter; 
+    //Start Sketches 
+    
+    var jsSketch1 = newSketchOnPlane(context, id + "jsSketch1", {
+            "sketchPlane" : initPlane
+    });
+    
+    skRectangle(jsSketch1, "rectangle1", {
+            "firstCorner" : vector(-jsTravelDistance/2, -jsTravelDistance/2) ,
+            "secondCorner" : vector(jsTravelDistance/2, jsTravelDistance/2)
+    });
+    
+    skSolve(jsSketch1);
+    
+    extrude(context, id + "jsExtrude1", {
+            "entities" : qSketchRegion(id + "jsSketch1"),
+            "wallShape" : qSketchRegion(id + "jsSketch1"),
+            "endBound" : BoundingType.BLIND,
+            "bodyType" : ExtendedToolBodyType.THIN,
+            "thickness1" : guideRailThickness, 
+            "thickness2" : 0 * millimeter, 
+            "depth" : guideRailThickness * 2
+    });
+    
+    var guideRail1Sketch = newSketchOnPlane(context, id + "guideRail1Sketch", {
+            "sketchPlane" : initPlane
+    });
+    
+    skRectangle(guideRail1Sketch, "rectangle1", {
+            "firstCorner" : vector(-jsTravelDistance/2, -crossBeamWidth/2),
+            "secondCorner" :  vector(jsTravelDistance/2, crossBeamWidth/2)
+    });
+    
+    skSolve(guideRail1Sketch);
+    
+    extrude(context, id + "jsGuideExtrude1", {
+            "entities" : qSketchRegion(id + "guideRail1Sketch"),
+            "wallShape" : qSketchRegion(id + "guideRail1Sketch"),
+            "endBound" : BoundingType.BLIND,
+            "bodyType" : ExtendedToolBodyType.THIN,
+            "thickness2" : guideRailThickness, 
+            "thickness1" : 0 * millimeter, 
+            "depth" : guideRailThickness
+    });
+    
+    var jsBasePlane = evPlane(context, {
+            "face" : qCapEntity(id + "jsExtrude1", CapType.END, EntityType.FACE)
+    });
+        
+    var guideRail2Sketch = newSketchOnPlane(context, id + "guideRail2Sketch", {
+            "sketchPlane" : jsBasePlane
+    });
+    
+    skRectangle(guideRail2Sketch, "rectangle1", {
+            "firstCorner" : vector(-crossBeamWidth/2, -jsTravelDistance/2),
+            "secondCorner" :  vector(crossBeamWidth/2, jsTravelDistance/2 )
+    });
+    
+    skSolve(guideRail2Sketch);
+    
+   extrude(context, id + "jsGuideExtrude2", {
+            "entities" : qSketchRegion(id + "guideRail2Sketch"),
+            "wallShape" : qSketchRegion(id + "guideRail2Sketch"),
+            "endBound" : BoundingType.BLIND,
+            "bodyType" : ExtendedToolBodyType.THIN,
+            "thickness2" : guideRailThickness, 
+            "thickness1" : 0 * millimeter, 
+            "depth" : -guideRailThickness
+    });
+    
+    //Moire Plane 1
+    
+    var moirebaseSketch1 = newSketchOnPlane(context, id + "moirebaseSketch1", {
+            "sketchPlane" : jsBasePlane
+    });
+    
+    skRectangle(moirebaseSketch1, "rectangle1", {
+            "firstCorner" : vector(-jsTravelDistance, -jsTravelDistance) ,
+            "secondCorner" : vector(jsTravelDistance, jsTravelDistance)
+    });
+    
+    skSolve(moirebaseSketch1);
+    
+    var moirebaseSketch2 = newSketchOnPlane(context, id + "moirebaseSketch2", {
+            "sketchPlane" : jsBasePlane
+    });
+    
+    skRectangle(moirebaseSketch2, "rectangle1", {
+            "firstCorner" : vector(-jsTravelDistance/2, -jsTravelDistance/2) ,
+            "secondCorner" : vector(jsTravelDistance/2, jsTravelDistance/2)
+    });
+    
+    skSolve(moirebaseSketch2);
+    
+    opExtrude(context, id + "moireBaseExtrude1", {
+            "entities" : qSketchRegion(id + "moirebaseSketch1"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : 1 * millimeter
+    });
+    
+    opExtrude(context, id + "moireBaseExtrude2", {
+            "entities" : qSketchRegion(id + "moirebaseSketch2"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : 1 * millimeter
+    });
+    
+    opBoolean(context, id + "moireBaseBoolean", {
+            "tools" : qCreatedBy(id + "moireBaseExtrude2", EntityType.BODY),
+            "targets" : qCreatedBy(id + "moireBaseExtrude1", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
+    });
+    
+    opBoolean(context, id + "jsBooleanBody", {
+            "tools" : qUnion([qCreatedBy(id + "moireBaseExtrude1", EntityType.BODY), 
+                    qCreatedBy(id + "jsExtrude1", EntityType.BODY), 
+                    definition.partToEdit]),
+            "operationType" : BooleanOperationType.UNION
+    });
+    
+    //JOYSTICK TOP
+    
+    var jsMoirePlane = evPlane(context, {
+            "face" : qCapEntity(id + "moireBaseExtrude1", CapType.END, EntityType.FACE)
+    });
+
+    var jsHolderSketch1 = newSketchOnPlane(context, id + "jsHolderSketch1", {
+            "sketchPlane" : jsMoirePlane
+    });
+    
+    skRectangle(jsHolderSketch1, "rectangle1", {
+            "firstCorner" : vector(-pinWidth/2 - tolerance, -pinWidth/2 - tolerance),
+            "secondCorner" : vector(pinWidth/2 + tolerance ,pinWidth/2 + tolerance)
+    });
+    
+    skSolve(jsHolderSketch1);
+    
+    var jsHolderSketch2 = newSketchOnPlane(context, id + "jsHolderSketch2", {
+            "sketchPlane" : jsMoirePlane
+    });
+    
+    skRectangle(jsHolderSketch2, "rectangle1", {
+            "firstCorner" : vector(-jsTravelDistance/2 - jsHolderOverhang, -jsTravelDistance/2 - jsHolderOverhang) ,
+            "secondCorner" : vector(jsTravelDistance/2 + jsHolderOverhang, jsTravelDistance/2 + jsHolderOverhang)
+    });
+    
+    skSolve(jsHolderSketch2);
+    
+    var jsHolderSketch3 = newSketchOnPlane(context, id + "jsHolderSketch3", {
+            "sketchPlane" : jsMoirePlane
+    });
+    
+    skRectangle(jsHolderSketch3, "rectangle1", {
+            "firstCorner" : vector(-jsStandoffLength/2,-jsStandoffLength/2),
+            "secondCorner" : vector(jsStandoffLength/2,jsStandoffLength/2)
+    });
+    
+    skSolve(jsHolderSketch3);
+    
+    opExtrude(context, id + "jsHolderExtrude1", {
+            "entities" : qSketchRegion(id + "jsHolderSketch1"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : 1 * millimeter
+    });
+    
+    
+    opExtrude(context, id + "jsHolderExtrude2", {
+            "entities" : qSketchRegion(id + "jsHolderSketch2"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : 1 * millimeter
+    });
+    
+   extrude(context, id + "jsHolderExtrude3", {
+            "entities" : qSketchRegion(id + "jsHolderSketch3"),
+            "wallShape" : qSketchRegion(id + "jsHolderSketch3"),
+            "endBound" : BoundingType.BLIND,
+            "bodyType" : ExtendedToolBodyType.THIN,
+            "thickness1" : guideRailThickness, 
+            "thickness2" : 0 * millimeter, 
+            "depth" : guideRailThickness
+    });
+    
+    opBoolean(context, id + "jsHolderBoolean", {
+            "tools" : qUnion([qCreatedBy(id + "jsHolderExtrude2", EntityType.BODY), 
+                              qCreatedBy(id + "jsHolderExtrude3", EntityType.BODY)]),
+            "operationType" : BooleanOperationType.UNION
+    });
+    
+    opBoolean(context, id + "jsHolderBoolean2", {
+            "tools" : qCreatedBy(id + "jsHolderExtrude1", EntityType.BODY),
+            "targets" : qCreatedBy(id + "jsHolderExtrude2", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
+    });
+    
+    //JoyStick 
+    
+    var jsPlane = evPlane(context, {
+            "face" : qCapEntity(id + "jsHolderExtrude2", CapType.END, EntityType.FACE)
+    });
+    
+    var jsStandOffSketch = newSketchOnPlane(context, id + "jsStandOffSketch", {
+            "sketchPlane" : jsPlane
+    });
+
+    skRectangle(jsStandOffSketch, "rectangle1", {
+            "firstCorner" : vector(-jsStandoffLength/2,-jsStandoffLength/2),
+            "secondCorner" : vector(jsStandoffLength/2,jsStandoffLength/2)
+    });
+    
+    skSolve(jsStandOffSketch);
+    
+    opExtrude(context, id + "joystickExtrude1", {
+            "entities" : qSketchRegion(id + "jsStandOffSketch"),
+            "direction" : zDir, 
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : jsStandoffHeight
+    });
+    
+    //plane for the rounded tip
+    var jsPlane2 = evPlane(context, {
+            "face" : qCapEntity(id + "joystickExtrude1", CapType.END, EntityType.FACE)
+    });
+    
+    var jsTipSketch = newSketchOnPlane(context, id + "jsTipSketch", {
+            "sketchPlane" : jsPlane2
+    });
+    
+    skCircle(jsTipSketch, "circle1", {
+            "center" : vector(0, 0) * inch,
+            "radius" : jsDiameter/2
+    });
+    
+    skSolve(jsTipSketch);
+    
+    opExtrude(context, id + "jsTipExtrude", {
+            "entities" : qSketchRegion(id + "jsTipSketch"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : jsDiameter/2
+    });
+    
+    var jsTipEdges = qCreatedBy(id + "jsTipExtrude", EntityType.EDGE);
+
+
+    
+    opFillet(context, id + "fillet1", {
+            "entities" : qNthElement(jsTipEdges, 1),
+            "radius" : jsDiameter/2
+    });
+    
+    // Pin 
+    
+    var pinSketch = newSketchOnPlane(context, id + "pinSketch", {
+            "sketchPlane" : initPlane
+    });
+    
+    skRectangle(pinSketch, "rectangle1", {
+            "firstCorner" : vector(-pinWidth/2, -pinWidth/2),
+            "secondCorner" : vector(pinWidth/2, pinWidth/2)
+    });
+    
+    skSolve(pinSketch);
+    
+    var pinOffset is ValueWithUnits = 3 * millimeter;
+    
+    opExtrude(context, id + "pinExtrude1", {
+            "entities" : qSketchRegion(id + "pinSketch"),
+            "direction" : zDir,
+            "endBound" : BoundingType.UP_TO_SURFACE,
+            "endBoundEntity" : qCapEntity(id + "joystickExtrude1", CapType.END, EntityType.FACE),   
+    });
+    
+    //Combine Bodies
+    
+    opBoolean(context, id + "jsTipBoolean1", {
+            "tools" : qUnion([qCreatedBy(id + "jsTipExtrude", EntityType.BODY),
+                            qCreatedBy(id + "joystickExtrude1", EntityType.BODY)]),
+            "operationType" : BooleanOperationType.UNION
+    });
+    
+    opBoolean(context, id + "jsTipBoolean2", {
+            "tools" : qCreatedBy(id + "pinExtrude1", EntityType.BODY),
+            "targets" : qCreatedBy(id + "jsTipExtrude", EntityType.BODY),
+            "keepTools" : true, 
+            "operationType" : BooleanOperationType.SUBTRACTION
+    });
+} 
+
+export 
+
+//Switch with Gear (not coilspring) 
+function makeSwitch(context is Context, id is Id, definition is map)
+{
+    
+    var switchCenter = evVertexPoint(context, { "vertex" : definition.switchCenterPoint });
+    var switchCenterCoords is map = {"X" : switchCenter[0], "Y" : switchCenter[1], "Z" : switchCenter[2]};
+    var zDir = evOwnerSketchPlane(context, {
+            "entity" : definition.switchCenterPoint
+    }).normal;
+    
+    var initPlane = plane(switchCenter, zDir);
+    var gearPressureAngle is ValueWithUnits = 20 * degree; 
+    var gearModule is ValueWithUnits = 1.875 * millimeter; 
+    var gearRootFillet is RootFilletType = RootFilletType.third;
+    
+    var gear1Teeth = 8; 
+    var gear1PitchDiameter = 15 * millimeter; 
+    var gearExtrudeThickness is ValueWithUnits = 4 * millimeter; 
+    var boreDiameter = 4 * millimeter; 
+    var switchHandleLength = 3 * gear1PitchDiameter / 2; 
+    
+    var gear2PitchDiameter = 30 * millimeter; 
+    var gear2Teeth = gear1Teeth * 2; 
+    
+    var pinionLength = 30 * millimeter; 
+    var pinionWidth = 20 * millimeter; 
+    var enclosureWallThickness = 2 * millimeter; 
+    var enclosureBottomDistance = gear2PitchDiameter/2 + gearModule * 1.25 + pinionWidth; 
+    var enclosureTopDistance = gear2PitchDiameter/2 + gear1PitchDiameter + switchHandleLength / 3;
+    var enclosureSideDistance = gear2PitchDiameter / 2 + gear1PitchDiameter / 2;  
+    
+    SpurGear(context, id + "gear1" , {
+    "GearInputType" : GearInputType.module,
+    "numTeeth" : gear1Teeth,
+    "module" : gearModule,
+    "pitchCircleDiameter" : gear1PitchDiameter,
+    "pressureAngle" : gearPressureAngle,
+    "centerHole" : false, 
+    "centerHoleDia" : boreDiameter,
+    "centerPoint" : true,
+    "center" : definition.switchCenterPoint,
+    "gearDepth" : gearExtrudeThickness, 
+    "flipGear" : false, 
+    "offset" : false,
+    "rootFillet" : gearRootFillet,
+    "key" : false
+    });
+        
+    var switchSketch1 = newSketchOnPlane(context, id + "switchSketch1", {
+            "sketchPlane" : initPlane
+    });
+    
+    skCircle(switchSketch1, "circle1", {
+            "center" : vector(0, 0) * inch,
+            "radius" : gear2PitchDiameter/2,
+            "construction" : true
+    });
+    
+    skRectangle(switchSketch1, "rectangle1", {
+            "firstCorner" : vector(-boreDiameter/2, 0 * millimeter), 
+            "secondCorner" : vector(boreDiameter/2, switchHandleLength)
+    });
+    
+    skSolve(switchSketch1);
+    
+    opExtrude(context, id + "switchHandleExtrude", {
+            "entities" : qSketchRegion(id + "switchSketch1"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : gearExtrudeThickness
+    });
+    
+    opBoolean(context, id + "switchHandleBoolean", {
+            "tools" : qUnion([qCreatedBy(id + "switchHandleExtrude", EntityType.BODY), 
+                      qBodyType(qCreatedBy(id + "gear1", EntityType.BODY), BodyType.SOLID)]),
+            "operationType" : BooleanOperationType.UNION
+    });
+    
+    var switchSketch2 = newSketchOnPlane(context, id + "switchSketch2", {
+            "sketchPlane" : initPlane
+    });
+    
+    skPoint(switchSketch2, "point1", {
+            "position" : vector(0 * millimeter, -(gear1PitchDiameter + gear2PitchDiameter) / 2) 
+    });
+    
+    skSolve(switchSketch2);
+    
+    var switchHandleSketch3 = newSketchOnPlane(context, id + "switchHandleSketch3", {
+            "sketchPlane" : initPlane
+    });
+    
+    skCircle(switchHandleSketch3, "circle1", {
+            "center" : vector(0, 0) * inch,
+            "radius" : boreDiameter/2
+    });
+    
+    skSolve(switchHandleSketch3);
+    
+    opExtrude(context, id + "switchHandleExtrude3", {
+            "entities" : qSketchRegion(id + "switchHandleSketch3"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : gearExtrudeThickness
+    });
+        
+    opBoolean(context, id + "switchHandleBoolean3", {
+            "tools" : qCreatedBy(id + "switchHandleExtrude3", EntityType.BODY),
+            "targets" : qCreatedBy(id + "switchHandleExtrude", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
+    });
+    
+    // var gear2Point is Query = qSketchRegion(id + "switchSketch2");
+    var pointQ = sketchEntityQuery(id + "switchSketch2", EntityType.VERTEX, "point1");
+    
+    SpurGear(context, id + "gear2" , {
+    "GearInputType" : GearInputType.module,
+    "numTeeth" : gear2Teeth,
+    "module" : gearModule,
+    "pitchCircleDiameter" : gear2PitchDiameter,
+    "pressureAngle" : gearPressureAngle,
+    "centerHole" : true, 
+    "centerHoleDia" : boreDiameter,
+    "centerPoint" : true,
+    "center" : pointQ,
+    "gearDepth" : gearExtrudeThickness, 
+    "flipGear" : false, 
+    "offset" : false,
+    "rootFillet" : gearRootFillet,
+    "key" : false
+    });
+    
+    var pinionXPoints is Query = qUnion([definition.switchCenterPoint, pointQ]);
+    
+    var StartPosition is Vector = evVertexPoint(context, {
+            "vertex" : qNthElement(pinionXPoints, 0)
+    });
+        
+    var EndPosition is Vector = evVertexPoint(context, {
+            "vertex" : qNthElement(pinionXPoints, 1)
+    });
+    
+    var sliderXDirection is Vector = normalize(EndPosition - StartPosition);
+        
+    var pinonPlaneVertex = evVertexPoint(context, {
+            "vertex" : pointQ
+    });
+        
+    var pinionPlane = plane(pinonPlaneVertex, zDir);
+        
+    var pinonSketch1 = newSketchOnPlane(context, id + "pinonSketch1", {
+            "sketchPlane" : pinionPlane
+    });
+
+    ////Pinion Teeth Points
+    var teethAngle = (90 * degree) - gearPressureAngle; 
+    var toothMidWidth = gearModule * PI/2;
+    var toothTipCos = (cos(teethAngle) * (gearModule));
+    var toothRootCos = (cos(teethAngle) * (gearModule * 1.25));
+    
+    var pinionP1 = vector(-gear2PitchDiameter/2 ,(-gear2PitchDiameter/2 - gearModule * 1.25));
+    var pinionP2 = vector( (-gear2PitchDiameter/2) + toothTipCos + toothRootCos, -gear2PitchDiameter/2 + gearModule);
+    var pinionP3 = vector((-gear2PitchDiameter/2) + toothMidWidth + toothRootCos - toothTipCos, -gear2PitchDiameter/2 + gearModule);
+    var pinionP4 = vector((-gear2PitchDiameter/2) + toothMidWidth + toothRootCos * 2, (-gear2PitchDiameter/2 - gearModule * 1.25));
+    
+    skPolyline(pinonSketch1, "polyline1", {
+            "points" : [
+                pinionP1, pinionP2, pinionP3, pinionP4, pinionP1   
+            ]
+    });
+    
+    skSolve(pinonSketch1);
+    
+    //extrude tooth
+    
+    opExtrude(context, id + "pinionToothExtrude", {
+            "entities" : qSketchRegion(id + "pinonSketch1"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : gearExtrudeThickness
+    });
+        
+    linearPattern(context, id + "linearPattern1", {
+            "patternType" : PatternType.PART,
+            "entities" : qCreatedBy(id + "pinionToothExtrude", EntityType.BODY),
+            "directionOne" : qCreatedBy(newId() + "Right", EntityType.FACE),
+            "distance" : gearModule * PI,
+            "instanceCount" : floor(gear2PitchDiameter / ( PI * gearModule))
+    });
+    
+    var pinionSketch2 = newSketchOnPlane(context, id + "pinionSketch2", {
+            "sketchPlane" : pinionPlane
+    });
+        
+    skLineSegment(pinionSketch2, "line1", {
+            "start" : vector(-gear2PitchDiameter/2, -gear2PitchDiameter/2),
+            "end" : vector(gear2PitchDiameter/2, -gear2PitchDiameter/2),
+            "construction" : true, 
+    });
+    
+    skRectangle(pinionSketch2, "rectangle1", {
+            "firstCorner" : vector(-gear2PitchDiameter/2, -gear2PitchDiameter/2 - gearModule * 1.25),
+            "secondCorner" : vector(gear2PitchDiameter/2, -gear2PitchDiameter/2 - (gearModule * 1.25) - pinionWidth)
+    });
+    
+    skSolve(pinionSketch2);
+    
+    extrude(context, id + "pinionExtrude2", {
+            "entities" : qSketchRegion(id + "pinionSketch2"),
+            "endBound" : BoundingType.BLIND,
+            "depth" : gearExtrudeThickness,
+            "bodyType" : ExtendedToolBodyType.SOLID,
+            "operationType" : NewBodyOperationType.ADD,
+            "defaultScope" : true
+    });
+    
+    // Enclousure 
+    
+    var enclosureSketch1 = newSketchOnPlane(context, id + "enclosureSketch1", {
+            "sketchPlane" : pinionPlane
+    });
+    
+    skRectangle(enclosureSketch1, "rectangle1", {
+            "firstCorner" : vector(-enclosureSideDistance, -enclosureBottomDistance),
+            "secondCorner" : vector(enclosureSideDistance, enclosureTopDistance) 
+    });
+    
+    skSolve(enclosureSketch1);
+    
+    opExtrude(context, id + "switchBaseExtrude1", {
+            "entities" : qSketchRegion(id + "enclosureSketch1"),
+            "direction" : -zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : 2 * millimeter
+    });
+    
+    var baseBoreSketch = newSketchOnPlane(context, id + "baseBoreSketch", {
+            "sketchPlane" : pinionPlane
+    });
+    
+    skCircle(baseBoreSketch, "circle1", {
+            "center" : vector(0, 0) * millimeter,
+            "radius" : boreDiameter/2
+    });
+    
+    skCircle(baseBoreSketch, "circle2", {
+            "center" : vector(0 * millimeter, gear2PitchDiameter/2 + gear1PitchDiameter/2),
+            "radius" : boreDiameter/2
+    });
+    
+    skSolve(baseBoreSketch);
+    
+    opExtrude(context, id + "switchBaseExtrude2", {
+            "entities" : qSketchRegion(id + "baseBoreSketch"),
+            "direction": zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : gearExtrudeThickness
+    });
+    
+    extrude(context, id + "switchBaseExtrude3", {
+            "entities" : qSketchRegion(id + "enclosureSketch1"),
+            "wallShape" : qSketchRegion(id + "enclosureSketch1"),
+            "endBound" : BoundingType.BLIND,
+            "depth" : gearExtrudeThickness,
+            "bodyType" : ExtendedToolBodyType.THIN,
+            "operationType" : NewBodyOperationType.NEW,
+            "thickness1" : enclosureWallThickness, //outer thickness
+            "thickness2" : 0 * millimeter, // inner thickness
+            "hasSecondDirection" : true, 
+            "secondDirectionBound" : BoundingType.BLIND,
+            "secondDirectionDepth" : 2 * millimeter, 
+    });
+    
+    var switchSlotSketch = newSketchOnPlane(context, id + "switchSlotSketch", {
+            "sketchPlane" : pinionPlane
+    });
+    
+    skRectangle(switchSlotSketch, "rectangle1", {
+            "firstCorner" : vector(-gear1PitchDiameter/2, 0 * millimeter) ,
+            "secondCorner" : vector(gear1PitchDiameter/2, enclosureTopDistance + gear1PitchDiameter)
+    });
+    
+    skSolve(switchSlotSketch);
+    
+    opExtrude(context, id + "slotExtrude", {
+            "entities" : qSketchRegion(id + "switchSlotSketch"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : gearExtrudeThickness
+    });
+    
+    opBoolean(context, id + "slotBoolean", {
+            "tools" : qCreatedBy(id + "slotExtrude", EntityType.BODY),
+            "targets" : qCreatedBy(id + "switchBaseExtrude3", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
+    });
+    
+    opBoolean(context, id + "enclosureBoolean", {
+            "tools" : qUnion([qCreatedBy(id + "switchBaseExtrude3", EntityType.BODY),
+                             qCreatedBy(id + "switchBaseExtrude2", EntityType.BODY),
+                             qCreatedBy(id + "switchBaseExtrude1", EntityType.BODY)]),
+            "operationType" : BooleanOperationType.UNION
+    });
+    
+    //Enclosure Cap
+    
+    var enclosureCapPlane = evPlane(context, {
+            "face" : qCapEntity(id + "switchBaseExtrude3", CapType.END, EntityType.FACE)
+    });
+    
+    var capSketch1 = newSketchOnPlane(context, id + "capSketch1", {
+            "sketchPlane" : enclosureCapPlane
+    });
+    
+    skRectangle(capSketch1, "rectangle1", {
+            "firstCorner" : vector(-enclosureSideDistance - enclosureWallThickness, -enclosureBottomDistance - enclosureWallThickness),
+            "secondCorner" : vector(enclosureSideDistance + enclosureWallThickness, enclosureTopDistance + enclosureWallThickness) 
+    });
+    
+    skSolve(capSketch1);
+    
+    opExtrude(context, id + "capExtrude1", {
+            "entities" : qSketchRegion(id + "capSketch1"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : enclosureWallThickness
+    });
+    
+    var capSketch2 = newSketchOnPlane(context, id + "capSketch2", {
+            "sketchPlane" : enclosureCapPlane
+    });
+    
+    skRectangle(capSketch2, "rectangle1", {
+            "firstCorner" : vector(-gear2PitchDiameter/2, -gear2PitchDiameter/2 - gearModule * 1.25),
+            "secondCorner" : vector(gear2PitchDiameter/2, -gear2PitchDiameter/2 - (gearModule * 1.25) - pinionWidth)
+    });
+    
+    skSolve(capSketch2);
+    
+    opExtrude(context, id + "capExtrude2", {
+            "entities" : qSketchRegion(id + "capSketch2"),
+            "direction" : zDir,
+            "endBound" : BoundingType.BLIND,
+            "endDepth" : enclosureWallThickness
+    });
+    
+    opBoolean(context, id + "capBoolean", {
+            "tools" : qCreatedBy(id + "capExtrude2", EntityType.BODY),
+            "targets" : qCreatedBy(id + "capExtrude1", EntityType.BODY),
+            "operationType" : BooleanOperationType.SUBTRACTION
+    });
+    
+}
+
+
 
 
